@@ -21,6 +21,11 @@ ENGINE_NAME = "Maia2"
 # game state via REST to check for missed events.
 WS_IDLE_TIMEOUT = 300  # 5 minutes
 
+# Matchmaking WS timeout: if no match arrives within this window, close
+# the WS, leave the queue, and re-join so the server-side queue entry
+# stays fresh and the agent remains visible in the lobby.
+MM_WS_TIMEOUT = 120  # 2 minutes
+
 
 class GameManager:
     """Orchestrates matchmaking and concurrent game play over WebSocket.
@@ -248,7 +253,12 @@ class GameManager:
                 if session_id:
                     await self._start_game(session_id, conn_id, variant)
                 else:
-                    # WS closed without a match (timeout / server restart) → retry
+                    # WS closed without a match (timeout / server restart)
+                    # Leave the old queue entry before re-joining
+                    try:
+                        await self.client.leave_matchmaking(conn_id)
+                    except Exception:
+                        pass  # best-effort; server may have already expired it
                     logger.info("[MM] %s WS ended without match, re-queuing", variant.name)
 
             except asyncio.CancelledError:
@@ -264,11 +274,19 @@ class GameManager:
                 await asyncio.sleep(5)
 
     async def _wait_for_match_ws(self, conn_id: str, variant: AgentVariant) -> Optional[str]:
-        """Connect to the matchmaking WebSocket and block until match_found."""
+        """Connect to the matchmaking WebSocket and wait for match_found.
+
+        Times out after MM_WS_TIMEOUT seconds so the outer loop can leave
+        the queue and re-join, keeping the agent visible in the lobby.
+        """
         try:
             async with self.client.ws_connect_matchmaking(conn_id) as ws:
                 logger.debug("[MM] WS connected for %s (conn=%s)", variant.name, conn_id[:8])
-                async for msg in ws:
+                async for msg in self._ws_iter_with_timeout(ws, MM_WS_TIMEOUT):
+                    if msg is None:
+                        # Timeout — close WS so the outer loop re-queues
+                        logger.debug("[MM] %s WS timed out after %ds, will re-queue", variant.name, MM_WS_TIMEOUT)
+                        return None
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         data = json.loads(msg.data)
                         if data.get("type") == "match_found" or "sessionId" in data:
