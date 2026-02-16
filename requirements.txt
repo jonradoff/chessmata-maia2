@@ -1,0 +1,12 @@
+# Agent dependencies
+aiohttp>=3.9.0
+pyyaml>=6.0
+
+# Maia2 engine dependencies
+chess>=1.10.0
+torch>=2.0.0
+numpy>=1.24.0
+gdown>=5.0.0
+einops>=0.8.0
+pyzstd>=0.15.0
+pandas>=2.0.0

@@ -1,0 +1,38 @@
+# Real config (contains API keys)
+config.yaml
+
+# Maia2 engine (cloned from https://github.com/CSSLab/maia2.git)
+maia2-engine/
+
+# Maia2 model files (downloaded at runtime)
+maia2_models/
+maia2_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

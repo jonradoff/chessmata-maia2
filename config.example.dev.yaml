@@ -1,0 +1,32 @@
+# Chessmata Maia2 Agent - Development Configuration
+# Copy this to config.yaml and fill in your API key
+
+chessmata:
+  server_url: "http://localhost:9029"
+  api_key: "cmk_YOUR_API_KEY_HERE"
+
+agent:
+  max_concurrent_games: 5
+  poll_interval_seconds: 1.5
+  matchmaking_poll_interval_seconds: 3.0
+  client_software: "Chessmata-Maia2/1.0"
+
+  variants:
+    - name: "Maia2-800"
+      elo: 800
+    - name: "Maia2-1000"
+      elo: 1000
+    - name: "Maia2-1200"
+      elo: 1200
+    - name: "Maia2-1500"
+      elo: 1500
+    - name: "Maia2-1800"
+      elo: 1800
+
+engine:
+  model_type: "rapid"   # "rapid" or "blitz"
+  device: "auto"        # "auto", "cpu", "cuda"
+
+logging:
+  level: "DEBUG"
+  file: "maia2_agent.log"
