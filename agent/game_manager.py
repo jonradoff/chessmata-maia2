@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Dict, List, Optional
 
@@ -43,6 +44,16 @@ class GameManager:
         self._mm_tasks: List[asyncio.Task] = []
         self._running = False
 
+        # Stats counters
+        self._stats_games_started = 0
+        self._stats_games_completed = 0
+        self._stats_wins = 0
+        self._stats_losses = 0
+        self._stats_draws = 0
+        self._stats_inferences = 0
+        self._stats_inference_ms: List[float] = []  # recent latencies for percentile calc
+        self._stats_start_time = time.monotonic()
+
     @property
     def total_active(self) -> int:
         return len(self._game_tasks)
@@ -63,6 +74,7 @@ class GameManager:
         """Track a game task and its variant."""
         self._game_tasks[session_id] = task
         self._variant_game_counts[variant_name] = self._variant_game_counts.get(variant_name, 0) + 1
+        self._stats_games_started += 1
 
         def _on_done(_t, sid=session_id, vname=variant_name):
             self._game_tasks.pop(sid, None)
@@ -144,8 +156,11 @@ class GameManager:
             task = asyncio.create_task(self._matchmaking_loop(variant))
             self._mm_tasks.append(task)
 
+        stats_task = asyncio.create_task(self._stats_loop())
+
         # Block until all matchmaking loops end (they run forever unless stopped)
         await asyncio.gather(*self._mm_tasks, return_exceptions=True)
+        stats_task.cancel()
         logger.info("Game manager stopped. Active games: %d", self.total_active)
 
     def stop(self):
@@ -154,6 +169,44 @@ class GameManager:
             t.cancel()
         for t in list(self._game_tasks.values()):
             t.cancel()
+
+    def get_stats(self) -> Dict:
+        """Return current stats as a dict (used by health endpoint and stats loop)."""
+        uptime = time.monotonic() - self._stats_start_time
+        latencies = self._stats_inference_ms[-200:]  # last 200 samples
+        p50 = sorted(latencies)[len(latencies) // 2] if latencies else 0
+        p95 = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0
+        return {
+            "uptime_seconds": int(uptime),
+            "active_games": self.total_active,
+            "games_started": self._stats_games_started,
+            "games_completed": self._stats_games_completed,
+            "wins": self._stats_wins,
+            "losses": self._stats_losses,
+            "draws": self._stats_draws,
+            "inferences": self._stats_inferences,
+            "inference_p50_ms": round(p50, 1),
+            "inference_p95_ms": round(p95, 1),
+        }
+
+    async def _stats_loop(self):
+        """Log stats every 5 minutes."""
+        try:
+            while self._running:
+                await asyncio.sleep(300)
+                s = self.get_stats()
+                logger.info(
+                    "[Stats] uptime=%ds active=%d started=%d completed=%d "
+                    "W/L/D=%d/%d/%d inferences=%d p50=%.0fms p95=%.0fms",
+                    s["uptime_seconds"], s["active_games"],
+                    s["games_started"], s["games_completed"],
+                    s["wins"], s["losses"], s["draws"],
+                    s["inferences"], s["inference_p50_ms"], s["inference_p95_ms"],
+                )
+                # Trim latency buffer to avoid unbounded growth
+                self._stats_inference_ms = self._stats_inference_ms[-200:]
+        except asyncio.CancelledError:
+            return
 
     # ── Matchmaking loop (one per variant) ───────────────────
 
@@ -371,6 +424,21 @@ class GameManager:
 
             except asyncio.CancelledError:
                 return
+            except aiohttp.WSServerHandshakeError as exc:
+                if not self._running:
+                    return
+                if exc.status in (401, 403, 404):
+                    logger.warning(
+                        "[Game] Permanent error (%d) for %s — abandoning game",
+                        exc.status, session_id[:8],
+                    )
+                    return
+                logger.warning(
+                    "[Game] WS handshake error (%d) for %s, retrying in %ds",
+                    exc.status, session_id[:8], backoff, exc_info=True,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
             except Exception:
                 if not self._running:
                     return
@@ -427,9 +495,13 @@ class GameManager:
             return move_count
 
         try:
+            t0 = time.monotonic()
             move_probs, win_prob = await self.batching_engine.get_move(
                 fen, variant.elo, elo_oppo,
             )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            self._stats_inferences += 1
+            self._stats_inference_ms.append(elapsed_ms)
         except asyncio.TimeoutError:
             logger.error("[Engine] Inference timed out for %s", session_id[:8])
             return move_count
@@ -489,10 +561,14 @@ class GameManager:
 
         if winner == our_color:
             result_str = "WIN"
+            self._stats_wins += 1
         elif winner:
             result_str = "LOSS"
+            self._stats_losses += 1
         else:
             result_str = "DRAW"
+            self._stats_draws += 1
+        self._stats_games_completed += 1
 
         logger.info(
             "[GameOver] %s game=%s result=%s reason=%s elo_change=%+d new_elo=%s moves=%d",

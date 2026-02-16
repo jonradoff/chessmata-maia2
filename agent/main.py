@@ -1,16 +1,21 @@
 """Entry point for the Chessmata Maia2 agent."""
 
 import asyncio
+import json
 import logging
 import logging.handlers
 import os
 import signal
 import sys
 
+from aiohttp import web
+
 from .config import load_config
 from .chessmata_client import ChessmataClient
 from .maia2_engine import Maia2Engine, BatchingEngine
 from .game_manager import GameManager
+
+HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8080"))
 
 
 def setup_logging(level: str, log_file: str):
@@ -91,6 +96,9 @@ async def run_agent():
     if user_id:
         await manager.resume_active_games(user_id)
 
+    # Start health check HTTP server
+    health_runner = await _start_health_server(manager)
+
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, manager.stop)
@@ -98,9 +106,26 @@ async def run_agent():
     try:
         await manager.run()
     finally:
+        await health_runner.cleanup()
         batching.stop()
         await client.close()
         logger.info("Agent shut down.")
+
+
+async def _start_health_server(manager: GameManager) -> web.AppRunner:
+    """Start a tiny HTTP server for Fly.io health checks."""
+    async def health_handler(_request):
+        stats = manager.get_stats()
+        return web.json_response({"status": "ok", **stats})
+
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", HEALTH_PORT)
+    await site.start()
+    logging.getLogger("agent").info("Health server listening on port %d", HEALTH_PORT)
+    return runner
 
 
 def main():

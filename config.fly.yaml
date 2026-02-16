@@ -1,9 +1,9 @@
-# Chessmata Maia2 Agent - Production Configuration
-# Copy this to config.yaml and fill in your API key
+# Chessmata Maia2 Agent - Fly.io Production Configuration
+# API key is injected via CHESSMATA_API_KEY environment variable (fly secrets)
 
 chessmata:
   server_url: "https://chessmata.metavert.io"
-  api_key: "cmk_YOUR_API_KEY_HERE"
+  api_key: ""  # overridden by CHESSMATA_API_KEY env var
 
 agent:
   max_concurrent_games: 50
@@ -30,8 +30,8 @@ agent:
       elo: 2100
 
 engine:
-  model_type: "rapid"   # "rapid" or "blitz"
-  device: "auto"        # "auto", "cpu", "cuda"
+  model_type: "rapid"
+  device: "cpu"
 
 logging:
   level: "INFO"

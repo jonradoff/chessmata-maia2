@@ -37,9 +37,10 @@ class Maia2Engine:
     For batched inference, use BatchingEngine which wraps this class.
     """
 
-    def __init__(self, model_type: str = "rapid", device: str = "auto"):
+    def __init__(self, model_type: str = "rapid", device: str = "auto", model_dir: str = ""):
         self.model_type = model_type
         self.device = self._resolve_device(device)
+        self.model_dir = model_dir or os.environ.get("MAIA2_MODEL_DIR", "./maia2_models")
         self._model = None
         self._prepared = None
         self._torch_device: Optional[str] = None  # actual torch device string
@@ -77,8 +78,11 @@ class Maia2Engine:
         from maia2 import model as maia2_model_mod
         from maia2 import inference as maia2_inference
 
-        logger.info("Loading Maia2 model (type=%s, device=%s)...", self.model_type, self.device)
-        self._model = maia2_model_mod.from_pretrained(type=self.model_type, device=self.device)
+        logger.info("Loading Maia2 model (type=%s, device=%s, model_dir=%s)...",
+                    self.model_type, self.device, self.model_dir)
+        self._model = maia2_model_mod.from_pretrained(
+            type=self.model_type, device=self.device, save_root=self.model_dir,
+        )
         self._prepared = maia2_inference.prepare()
 
         import torch
@@ -152,7 +156,7 @@ class Maia2Engine:
 
         logits_maia_legal = logits_maia * legal_moves_t
         probs = logits_maia_legal.softmax(dim=-1).cpu().tolist()
-        values = (logits_value / 2 + 0.5).clamp(0, 1).cpu().tolist()
+        values = (logits_value / 2 + 0.5).clamp(0, 1).squeeze(-1).cpu().tolist()
 
         # Post-process each position
         results: List[Tuple[Dict[str, float], float]] = []

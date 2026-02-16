@@ -12,6 +12,10 @@ agent:
   client_software: "Chessmata-Maia2/1.0"
 
   variants:
+    - name: "Maia2-400"
+      elo: 400
+    - name: "Maia2-600"
+      elo: 600
     - name: "Maia2-800"
       elo: 800
     - name: "Maia2-1000"
@@ -22,6 +26,8 @@ agent:
       elo: 1500
     - name: "Maia2-1800"
       elo: 1800
+    - name: "Maia2-2100"
+      elo: 2100
 
 engine:
   model_type: "rapid"   # "rapid" or "blitz"

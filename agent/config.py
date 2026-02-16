@@ -30,11 +30,14 @@ class AgentConfig:
     matchmaking_poll_interval_seconds: float = 3.0
     client_software: str = "Chessmata-Maia2/1.0"
     variants: List[AgentVariant] = field(default_factory=lambda: [
+        AgentVariant("Maia2-400", 400),
+        AgentVariant("Maia2-600", 600),
         AgentVariant("Maia2-800", 800),
         AgentVariant("Maia2-1000", 1000),
         AgentVariant("Maia2-1200", 1200),
         AgentVariant("Maia2-1500", 1500),
         AgentVariant("Maia2-1800", 1800),
+        AgentVariant("Maia2-2100", 2100),
     ])
 
 
@@ -83,6 +86,10 @@ def load_config(path: str = "config.yaml") -> Config:
     cm = raw.get("chessmata", {})
     cfg.chessmata.server_url = cm.get("server_url", cfg.chessmata.server_url)
     cfg.chessmata.api_key = cm.get("api_key", cfg.chessmata.api_key)
+
+    # Environment variable overrides (for containerized deployments)
+    if os.environ.get("CHESSMATA_API_KEY"):
+        cfg.chessmata.api_key = os.environ["CHESSMATA_API_KEY"]
 
     # Agent section
     ag = raw.get("agent", {})
