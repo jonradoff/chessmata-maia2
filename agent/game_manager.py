@@ -47,7 +47,7 @@ class GameManager:
         self._game_tasks: Dict[str, asyncio.Task] = {}    # session_id -> task
         self._variant_game_counts: Dict[str, int] = {}     # variant_name -> active count
         self._mm_tasks: List[asyncio.Task] = []
-        self._running = False
+        self._running = True
 
         # Stats counters
         self._stats_games_started = 0
@@ -148,7 +148,6 @@ class GameManager:
             logger.info("[Resume] No active games to resume")
 
     async def run(self):
-        self._running = True
         logger.info(
             "Starting game manager [WebSocket mode] (max_concurrent=%d, per_variant=%s, variants=%d, already_active=%d)",
             self.config.agent.max_concurrent_games,
@@ -253,7 +252,19 @@ class GameManager:
                 if session_id:
                     await self._start_game(session_id, conn_id, variant)
                 else:
-                    # WS closed without a match (timeout / server restart)
+                    # WS closed without a match (timeout / server restart).
+                    # Check if we were matched during the brief disconnect
+                    # window (race between WS close and server matching loop).
+                    try:
+                        status = await self.client.get_queue_status(conn_id)
+                        matched_sid = status.get("matchedSessionId")
+                        if matched_sid:
+                            logger.info("[MM] %s matched during reconnect! session=%s", variant.name, matched_sid)
+                            await self._start_game(matched_sid, conn_id, variant)
+                            continue
+                    except Exception:
+                        pass  # queue entry may already be gone
+
                     # Leave the old queue entry before re-joining
                     try:
                         await self.client.leave_matchmaking(conn_id)

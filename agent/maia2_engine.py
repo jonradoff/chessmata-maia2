@@ -156,7 +156,10 @@ class Maia2Engine:
 
         logits_maia_legal = logits_maia * legal_moves_t
         probs = logits_maia_legal.softmax(dim=-1).cpu().tolist()
-        values = (logits_value / 2 + 0.5).clamp(0, 1).squeeze(-1).cpu().tolist()
+        values_t = (logits_value / 2 + 0.5).clamp(0, 1).squeeze(-1).cpu()
+        values = values_t.tolist()
+        if n == 1 and isinstance(values, float):
+            values = [values]
 
         # Post-process each position
         results: List[Tuple[Dict[str, float], float]] = []

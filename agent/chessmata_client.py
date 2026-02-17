@@ -109,7 +109,7 @@ class ChessmataClient:
 
     def ws_connect_game(self, session_id: str, player_id: str):
         """Return an async context manager for a game WebSocket."""
-        url = f"{self.ws_base_url}/ws/games/{session_id}?playerId={player_id}"
+        url = f"{self.ws_base_url}/ws/games/{session_id}?playerId={player_id}&token={self.api_key}"
         return self._session.ws_connect(url, heartbeat=30)
 
     # ── Matchmaking REST ─────────────────────────────────────
@@ -137,6 +137,9 @@ class ChessmataClient:
             ],
         }
         return await self._request("POST", "/matchmaking/join", payload)
+
+    async def get_queue_status(self, connection_id: str) -> Dict[str, Any]:
+        return await self._request("GET", f"/matchmaking/status?connectionId={connection_id}")
 
     async def leave_matchmaking(self, connection_id: str) -> Dict[str, Any]:
         return await self._request("POST", f"/matchmaking/leave?connectionId={connection_id}")
